@@ -6,6 +6,7 @@
     <title>SupprAD - Visualiseur de Logs</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
         .upload-container {
             border: 2px dashed #ccc;
@@ -42,6 +43,27 @@
 
         <div class="mt-4">
             <p class="text-muted">Nombre total d'entrées : <span id="totalEntries">0</span></p>
+            
+            <div class="text-end mb-3">
+                <div class="dropdown d-inline-block">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-funnel"></i> Filtrer par utilisateur
+                    </button>
+                    <div class="dropdown-menu p-2" style="min-width: 250px;" id="usersDropdown">
+                        <div class="mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="selectAll" checked>
+                                <label class="form-check-label" for="selectAll">
+                                    Sélectionner tout
+                                </label>
+                            </div>
+                            <hr>
+                        </div>
+                        <div id="usersList" style="max-height: 300px; overflow-y: auto;">
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="table-responsive mt-4">
@@ -69,8 +91,69 @@
     <script>
         let dataTable;
 
+        function clearFilters() {
+            dataTable.search('').draw();
+        }
+
+        function updateUsersList() {
+            const usersList = document.getElementById('usersList');
+            const users = new Set();
+            
+            // Récupérer tous les utilisateurs uniques
+            dataTable.column(1).data().each(value => users.add(value));
+            
+            // Vider la liste actuelle
+            usersList.innerHTML = '';
+            
+            // Ajouter les cases à cocher pour chaque utilisateur
+            Array.from(users).sort().forEach(user => {
+                const div = document.createElement('div');
+                div.className = 'form-check';
+                div.innerHTML = `
+                    <input class="form-check-input user-checkbox" type="checkbox" value="${user}" id="user_${user}" checked>
+                    <label class="form-check-label" for="user_${user}">
+                        ${user}
+                    </label>
+                `;
+                usersList.appendChild(div);
+            });
+
+            // Gérer le "Sélectionner tout"
+            const selectAllCheckbox = document.getElementById('selectAll');
+            selectAllCheckbox.addEventListener('change', function() {
+                const checked = this.checked;
+                document.querySelectorAll('.user-checkbox').forEach(checkbox => {
+                    checkbox.checked = checked;
+                });
+                filterTable();
+            });
+
+            // Ajouter les événements de changement pour chaque checkbox
+            document.querySelectorAll('.user-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', filterTable);
+            });
+        }
+
+        function filterTable() {
+            const selectedUsers = Array.from(document.querySelectorAll('.user-checkbox:checked'))
+                .map(checkbox => checkbox.value);
+            
+            // Créer l'expression régulière pour le filtrage
+            const filterRegex = selectedUsers.length ? 
+                '^(' + selectedUsers.join('|') + ')$' : 
+                '$^'; // Ne correspond à rien si aucun utilisateur sélectionné
+            
+            // Appliquer le filtre
+            dataTable.column(1)
+                .search(filterRegex, true, false)
+                .draw();
+
+            // Mettre à jour le nombre total d'entrées visibles
+            const visibleRows = dataTable.page.info().recordsDisplay;
+            document.getElementById('totalEntries').textContent = visibleRows;
+        }
+
         $(document).ready(function() {
-            // Initialisation de DataTables
             dataTable = $('#logsTable').DataTable({
                 language: {
                     lengthMenu: "Afficher _MENU_ entrées par page",
@@ -92,9 +175,8 @@
                     { data: 'object' }
                 ],
                 drawCallback: function() {
-                    // Mise à jour du nombre total d'entrées
-                    const totalRows = this.api().data().length;
-                    document.getElementById('totalEntries').textContent = totalRows;
+                    const visibleRows = this.api().page.info().recordsDisplay;
+                    document.getElementById('totalEntries').textContent = visibleRows;
                 }
             });
 
@@ -179,6 +261,7 @@
 
                     // Mise à jour du tableau
                     dataTable.clear().rows.add(processedEvents).draw();
+                    updateUsersList(); // Mettre à jour la liste des utilisateurs après le chargement
                     showAlert('Fichier traité avec succès', 'success');
                 } catch (error) {
                     console.error('Error:', error);
