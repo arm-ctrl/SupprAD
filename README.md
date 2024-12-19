@@ -25,4 +25,4 @@ SupprAD est un outil web simple et efficace conçu pour visualiser et analyser l
 - DataTables 1.13.7
 
 ## Développeur
-Développé par [Arman Grigoryan](https://github.com/arm-ctrl)
+Développé par [arm-ctrl](https://github.com/arm-ctrl)
