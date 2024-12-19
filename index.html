@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SupprAD - Visualiseur de Logs</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <style>
+        .upload-container {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #f8f9fa;
+        }
+        .upload-container:hover {
+            border-color: #0d6efd;
+            background-color: #f1f3f5;
+        }
+        #dropZone.dragover {
+            background-color: #e9ecef;
+            border-color: #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">SupprAD - Visualiseur de Logs</h1>
+        
+        <div id="dropZone" class="upload-container">
+            <p class="mb-2">Glissez et déposez votre fichier XML ici ou</p>
+            <input type="file" id="fileInput" accept=".xml" class="d-none">
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                Sélectionner un fichier
+            </button>
+            <p class="mt-2 text-muted" id="fileName"></p>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="mt-4">
+            <p class="text-muted">Nombre total d'entrées : <span id="totalEntries">0</span></p>
+        </div>
+
+        <div class="table-responsive mt-4">
+            <table id="logsTable" class="table table-striped table-bordered">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Utilisateur</th>
+                        <th>Objet supprimé</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <footer class="text-center mt-4 mb-4">
+        <p>Développé avec ❤️ par <a href="https://github.com/arm-ctrl" target="_blank">Arman Grigoryan</a></p>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+    <script>
+        let dataTable;
+
+        $(document).ready(function() {
+            // Initialisation de DataTables
+            dataTable = $('#logsTable').DataTable({
+                language: {
+                    lengthMenu: "Afficher _MENU_ entrées par page",
+                    zeroRecords: "Aucun résultat trouvé",
+                    info: "Page _PAGE_ sur _PAGES_",
+                    infoEmpty: "Aucune entrée disponible",
+                    infoFiltered: "(filtré parmi _MAX_ entrées au total)",
+                    search: "Rechercher :",
+                    paginate: {
+                        first: "Premier",
+                        last: "Dernier",
+                        next: "Suivant",
+                        previous: "Précédent"
+                    }
+                },
+                columns: [
+                    { data: 'date' },
+                    { data: 'user' },
+                    { data: 'object' }
+                ],
+                drawCallback: function() {
+                    // Mise à jour du nombre total d'entrées
+                    const totalRows = this.api().data().length;
+                    document.getElementById('totalEntries').textContent = totalRows;
+                }
+            });
+
+            // Gestion du drag & drop
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            const fileName = document.getElementById('fileName');
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+        });
+
+        function handleFile(file) {
+            if (!file.name.endsWith('.xml')) {
+                showAlert('Erreur: Le fichier doit être au format XML', 'danger');
+                return;
+            }
+
+            document.getElementById('fileName').textContent = `Fichier sélectionné : ${file.name}`;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(e.target.result, "text/xml");
+                    const events = xmlDoc.getElementsByTagName("Event");
+                    const processedEvents = [];
+
+                    for (let event of events) {
+                        // Vérifie si c'est un événement de type 4663
+                        const eventId = event.querySelector("EventID");
+                        if (eventId && eventId.textContent === "4663") {
+                            // Extraction de la date
+                            const timeCreated = event.querySelector("TimeCreated");
+                            let formattedDate = '';
+                            if (timeCreated && timeCreated.getAttribute("SystemTime")) {
+                                const dateStr = timeCreated.getAttribute("SystemTime");
+                                const date = new Date(dateStr);
+                                formattedDate = date.toLocaleString('fr-FR');
+                            }
+
+                            // Extraction du nom d'utilisateur et de l'objet
+                            let username = '';
+                            let objectName = '';
+                            const dataElements = event.querySelectorAll("EventData Data");
+                            dataElements.forEach(data => {
+                                if (data.getAttribute("Name") === "SubjectUserName") {
+                                    username = data.textContent;
+                                } else if (data.getAttribute("Name") === "ObjectName") {
+                                    objectName = data.textContent;
+                                }
+                            });
+
+                            processedEvents.push({
+                                date: formattedDate,
+                                user: username,
+                                object: objectName
+                            });
+                        }
+                    }
+
+                    // Mise à jour du tableau
+                    dataTable.clear().rows.add(processedEvents).draw();
+                    showAlert('Fichier traité avec succès', 'success');
+                } catch (error) {
+                    console.error('Error:', error);
+                    showAlert('Erreur lors du traitement du fichier XML', 'danger');
+                }
+            };
+
+            reader.readAsText(file);
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alert = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            alertContainer.innerHTML = alert;
+            setTimeout(() => {
+                const alertElement = alertContainer.querySelector('.alert');
+                if (alertElement) {
+                    alertElement.remove();
+                }
+            }, 5000);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
